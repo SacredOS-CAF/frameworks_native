@@ -926,6 +926,15 @@ private:
     CreateNativeWindowSurfaceFunction mCreateNativeWindowSurface;
 
     SurfaceFlingerBE mBE;
+
+    bool mIsDolphinEnabled = false;
+    bool mDolphinFuncsEnabled = false;
+    void *mDolphinHandle = nullptr;
+    void (*mDolphinOnFrameAvailable)(bool isTransparent, int num, int32_t width, int32_t height,
+                                     String8 name) = nullptr;
+    bool (*mDolphinInit)() = nullptr;
+    bool (*mDolphinMonitor)(int number) = nullptr;
+    void (*mDolphinRefresh)() = nullptr;
 };
 }; // namespace android
 
