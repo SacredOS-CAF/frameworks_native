@@ -42,6 +42,7 @@ bool ExSurfaceFlinger::regionDump = false;
 
 ExSurfaceFlinger::ExSurfaceFlinger() {
     char property[PROPERTY_VALUE_MAX] = {0};
+    bool updateVSyncSourceOnDoze = false;
 
     mDebugLogs = false;
     if ((property_get("vendor.display.qdframework_logs", property, NULL) > 0) &&
@@ -68,15 +69,34 @@ ExSurfaceFlinger::ExSurfaceFlinger() {
        sAllowHDRFallBack = true;
     }
 
-    using vendor::display::config::V1_2::IDisplayConfig;
-    mDisplayConfig = IDisplayConfig::getService();
-    if (mDisplayConfig != NULL) {
-        if (!mDisplayConfig->setDisplayIndex(IDisplayConfig::DisplayTypeExt::DISPLAY_BUILTIN,
-                 HWC_DISPLAY_BUILTIN_2, (HWC_DISPLAY_VIRTUAL - HWC_DISPLAY_BUILTIN_2)) &&
-            !mDisplayConfig->setDisplayIndex(IDisplayConfig::DisplayTypeExt::DISPLAY_PLUGGABLE,
-                 HWC_DISPLAY_EXTERNAL, (HWC_DISPLAY_BUILTIN_2 - HWC_DISPLAY_EXTERNAL)) &&
-            !mDisplayConfig->setDisplayIndex(IDisplayConfig::DisplayTypeExt::DISPLAY_VIRTUAL,
-                 HWC_DISPLAY_VIRTUAL, 1)) {
+    if((property_get("vendor.display.update_vsync_on_doze", property, "0") > 0) &&
+       (!strncmp(property, "1", PROPERTY_VALUE_MAX ) ||
+        (!strncasecmp(property,"true", PROPERTY_VALUE_MAX )))) {
+       updateVSyncSourceOnDoze = true;
+    }
+
+    {
+        using vendor::display::config::V1_2::IDisplayConfig;
+        android::sp<IDisplayConfig> disp_config_v1_2 = IDisplayConfig::getService();
+        if (disp_config_v1_2 != NULL) {
+            disp_config_v1_2->setDisplayIndex(IDisplayConfig::DisplayTypeExt::DISPLAY_BUILTIN,
+                     HWC_DISPLAY_BUILTIN_2, (HWC_DISPLAY_VIRTUAL - HWC_DISPLAY_BUILTIN_2));
+            disp_config_v1_2->setDisplayIndex(IDisplayConfig::DisplayTypeExt::DISPLAY_PLUGGABLE,
+                     HWC_DISPLAY_EXTERNAL, (HWC_DISPLAY_BUILTIN_2 - HWC_DISPLAY_EXTERNAL));
+            disp_config_v1_2->setDisplayIndex(IDisplayConfig::DisplayTypeExt::DISPLAY_VIRTUAL,
+                     HWC_DISPLAY_VIRTUAL, 1);
+        }
+    }
+
+    {
+        using vendor::display::config::V1_6::IDisplayConfig;
+        android::sp<IDisplayConfig> disp_config_v1_6 = IDisplayConfig::getService();
+        if (disp_config_v1_6 != NULL) {
+            disp_config_v1_6->updateVSyncSourceOnPowerModeOff();
+            if(updateVSyncSourceOnDoze) {
+                disp_config_v1_6->updateVSyncSourceOnPowerModeDoze();
+                mUpdateVSyncSourceOnDoze = true;
+            }
         }
     }
 }
@@ -140,7 +160,9 @@ void ExSurfaceFlinger::setDisplayAnimating(const sp<const DisplayDevice>& hw __u
                                         vendor::display::config::V1_1::IDisplayConfig::getService();
 
     int32_t dpy = hw->getDisplayType();
-    if (disp_config_v1_1 == NULL || dpy == HWC_DISPLAY_PRIMARY || !mDisableExtAnimation) {
+    if (disp_config_v1_1 == NULL || !mDisableExtAnimation ||
+        ((dpy > DisplayDevice::DISPLAY_ID_INVALID &&
+        dpy < DisplayDevice::NUM_BUILTIN_DISPLAY_TYPES) && mBuiltInBitmask.test(dpy))) {
         return;
     }
 
